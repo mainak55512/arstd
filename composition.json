@@ -2,7 +2,7 @@
     "project_name": "arstd",
     "project_language": "c",
     "compiler_path": "gcc",
-    "version": "unknown",
+    "version": "v0.1.0",
     "executable": false,
     "flags": [],
     "lib_links": [],
