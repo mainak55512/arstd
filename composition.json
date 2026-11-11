@@ -1,0 +1,15 @@
+{
+    "project_name": "arstd",
+    "project_language": "c",
+    "compiler_path": "gcc",
+    "version": "unknown",
+    "executable": false,
+    "flags": [],
+    "lib_links": [],
+    "excludes": [],
+    "exclude_dirs": [],
+    "exclude_exception": [],
+    "tmpl": {},
+    "dependencies": {},
+    "sync": {}
+}

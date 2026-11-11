@@ -1,0 +1,7 @@
+[
+    {
+        "directory": "/home/mainak/programs/arstd",
+        "file": "lib/arstd.c",
+        "command": "gcc -c lib/arstd.c -Iinclude -o lib/arstd.c.o"
+    }
+]
