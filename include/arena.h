@@ -1,32 +1,49 @@
 #ifndef ARENA_H
-
 #define ARENA_H
 
 #include <stddef.h>
 
-typedef struct Arena Arena;
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
+#include <stdbool.h>
+#elif !defined(__cplusplus) && !defined(__bool_true_and_false_are_defined)
+typedef int bool;
+#define true 1
+#define false 0
+#define __bool_true_and_false_are_defined 1
+#endif
 
-/* Allocates memory on Heap with maximum memory alignment */
+typedef struct Arena Arena;
+typedef struct ArenaTemp {
+  Arena *arena;
+  Arena *tail;
+  size_t saved_size;
+} ArenaTemp;
+
 void *m_align_alloc(size_t capacity);
 
-/* Frees memory allocated by m_align_alloc or m_align_realloc */
 void m_align_free(void *ptr);
 
-/* Re-allocates memory on Heap with maximum memory alignment */
 void *m_align_realloc(void *ptr, size_t old_size, size_t new_size);
 
-/* Initiates an arena with the given capacity */
 Arena *arena_init(size_t capacity);
 
-/* Allocates a chunk on the arena, when the arena
- * gets full, it calls `arena_init` again internally to allocate more memory */
 void *arena_alloc(Arena *arena, size_t size);
 
-/* Frees the arena and all the allocations done on it */
 void arena_free(Arena **arena);
 
-/* Wipes out all the allocations done on the arena and restores it to its
- * initial capacity */
 void arena_reset(Arena **arena);
 
-#endif
+void arena_rewind(Arena *arena);
+
+ArenaTemp arena_temp_begin(Arena *arena);
+
+void arena_temp_end(ArenaTemp temp);
+
+size_t arena_used(Arena *arena);
+
+size_t arena_capacity(Arena *arena);
+
+#define arena_push(arena, T, count)                                            \
+  ((T *)arena_alloc((arena), sizeof(T) * (size_t)(count)))
+
+#endif /* ARENA_H */

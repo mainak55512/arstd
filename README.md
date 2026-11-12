@@ -23,7 +23,7 @@ Through a single umbrella header (`#include <arstd.h>`), `arstd` provides region
 Add `arstd` directly to your `flint` project:
 
 ```bash
-flint add https://github.com/mainak55512/arstd@v0.1.0
+flint add https://github.com/mainak55512/arstd@v0.1.1
 ```
 
 ### Using CMake
@@ -53,14 +53,20 @@ This produces the static library `libarstd.a`. Include the entire toolkit in you
 
 ### 1. Arena & Aligned Memory (`<arena.h>`)
 
-| Function | Description | Signature |
-| :--- | :--- | :--- |
-| `arena_init` | Initializes a new `Arena` with the specified initial byte capacity. | `Arena *arena_init(size_t capacity)` |
-| `arena_alloc` | Allocates an aligned chunk of `size` bytes from the arena (automatically chains a new block if full). | `void *arena_alloc(Arena *arena, size_t size)` |
-| `arena_reset` | Wipes all allocations in the arena and restores it to its initial capacity for reuse. | `void arena_reset(Arena **arena)` |
-| `arena_free` | Frees the arena and all memory blocks allocated within it, setting `*arena` to `NULL`. | `void arena_free(Arena **arena)` |
-| `m_align_alloc` | Allocates heap memory aligned to the platform's maximum alignment requirement. | `void *m_align_alloc(size_t capacity)` |
-| `m_align_realloc` | Reallocates aligned heap memory from `old_size` to `new_size`. | `void *m_align_realloc(void *ptr, size_t old_size, size_t new_size)` |
+| Function / Macro | Description | Signature |
+| --- | --- | --- |
+| `arena_init` | Initializes a new `Arena` with the specified initial byte capacity (rounded up to `MAX_ALIGN`). | `Arena *arena_init(size_t capacity)` |
+| `arena_alloc` | Allocates a zero-initialized, maximally aligned chunk of `size` bytes from the arena (automatically chains a new block if full). | `void *arena_alloc(Arena *arena, size_t size)` |
+| `arena_push` | Typed helper macro that allocates `count` zero-initialized elements of type `T` on the arena. | `T *arena_push(Arena *arena, T, size_t count)` |
+| `arena_reset` | Wipes all allocations, frees any chained overflow blocks, and restores the arena to its initial base capacity. | `void arena_reset(Arena **arena)` |
+| `arena_rewind` | Zeroes out all used bytes and resets offsets to `0` across all chained blocks without freeing them, keeping capacity warm for reuse. | `void arena_rewind(Arena *arena)` |
+| `arena_free` | Securely zeroes out and frees the arena and all chained memory blocks, setting `*arena` to `NULL`. | `void arena_free(Arena **arena)` |
+| `arena_temp_begin` | Takes an $O(1)$ snapshot of the arena's current position for temporary scratchpad allocations. | `ArenaTemp arena_temp_begin(Arena *arena)` |
+| `arena_temp_end` | Rewinds and zeroes out all allocations made since `arena_temp_begin`, restoring the arena to the saved checkpoint. | `void arena_temp_end(ArenaTemp temp)` |
+| `arena_used` | Returns the total number of bytes currently allocated across all chained blocks in the arena. | `size_t arena_used(Arena *arena)` |
+| `arena_capacity` | Returns the total byte capacity allocated across all chained blocks in the arena. | `size_t arena_capacity(Arena *arena)` |
+| `m_align_alloc` | Allocates zero-initialized heap memory aligned to the platform's maximum alignment requirement (`MAX_ALIGN`). | `void *m_align_alloc(size_t capacity)` |
+| `m_align_realloc` | Reallocates maximally aligned heap memory from `old_size` to `new_size`. | `void *m_align_realloc(void *ptr, size_t old_size, size_t new_size)` |
 | `m_align_free` | Frees memory allocated by `m_align_alloc` or `m_align_realloc`. | `void m_align_free(void *ptr)` |
 
 ---
