@@ -60,7 +60,8 @@ This produces the static library `libarstd.a`. Include the entire toolkit in you
 | `arena_push` | Typed helper macro that allocates `count` zero-initialized elements of type `T` on the arena. | `T *arena_push(Arena *arena, T, size_t count)` |
 | `arena_reset` | Wipes all allocations, frees any chained overflow blocks, and restores the arena to its initial base capacity. | `void arena_reset(Arena **arena)` |
 | `arena_rewind` | Zeroes out all used bytes and resets offsets to `0` across all chained blocks without freeing them, keeping capacity warm for reuse. | `void arena_rewind(Arena *arena)` |
-| `arena_free` | Securely zeroes out and frees the arena and all chained memory blocks, setting `*arena` to `NULL`. | `void arena_free(Arena **arena)` |
+| `arena_free_secure` | Securely zeroes out and frees the arena and all chained memory blocks, setting `*arena` to `NULL`. | `void arena_free_secure(Arena **arena)` |
+| `arena_free` | Frees the arena and all chained memory blocks, setting `*arena` to `NULL`. | `void arena_free(Arena **arena)` |
 | `arena_temp_begin` | Takes an $O(1)$ snapshot of the arena's current position for temporary scratchpad allocations. | `ArenaTemp arena_temp_begin(Arena *arena)` |
 | `arena_temp_end` | Rewinds and zeroes out all allocations made since `arena_temp_begin`, restoring the arena to the saved checkpoint. | `void arena_temp_end(ArenaTemp temp)` |
 | `arena_used` | Returns the total number of bytes currently allocated across all chained blocks in the arena. | `size_t arena_used(Arena *arena)` |
