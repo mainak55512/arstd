@@ -32,6 +32,8 @@ void *arena_alloc(Arena *arena, size_t size);
 
 void arena_free(Arena **arena);
 
+void arena_free_secure(Arena **arena);
+
 void arena_reset(Arena **arena);
 
 void arena_rewind(Arena *arena);
