@@ -13,6 +13,7 @@ typedef int bool;
 #endif
 
 typedef struct Arena Arena;
+
 typedef struct ArenaTemp {
   Arena *arena;
   Arena *tail;
