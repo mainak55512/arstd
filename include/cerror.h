@@ -65,7 +65,7 @@ void cerror_panic(cerror_t err, const char *msg, const char *file, int line);
 #define UNWRAP_OR(ResType, expr, fallback)                                     \
   ResType##_unwrap_or_((expr), (fallback))
 
-#define TRY(out, RetType, ExprType, expr)                                      \
+#define CERROR__TRY4(out, RetType, ExprType, expr)                             \
   do {                                                                         \
     ExprType cerror__res = (expr);                                             \
     if (!cerror__res.is_ok) {                                                  \
@@ -73,5 +73,16 @@ void cerror_panic(cerror_t err, const char *msg, const char *file, int line);
     }                                                                          \
     (out) = cerror__res.ok;                                                    \
   } while (0)
+
+#define CERROR__TRY3(out, Type, expr) CERROR__TRY4(out, Type, Type, expr)
+
+#define CERROR__EXPAND(x) x
+#define CERROR__CALL(fn, args) CERROR__EXPAND(fn args)
+#define CERROR__TRY_PICK(_1, _2, _3, _4, NAME, ...) NAME
+
+#define TRY(...)                                                               \
+  CERROR__CALL(CERROR__CALL(CERROR__TRY_PICK,                                  \
+                            (__VA_ARGS__, CERROR__TRY4, CERROR__TRY3, _)),     \
+               (__VA_ARGS__))
 
 #endif // CERROR_H

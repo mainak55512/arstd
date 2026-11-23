@@ -147,6 +147,32 @@ This produces the static library `libarstd.a`. Include the entire toolkit in you
 
 ---
 
+## Error handling framework (`<cerror.h>`)
+
+| Macro / Function | Description | Signature (as seen by user) |
+| :--- | :--- | :--- |
+| `cerror_t` | Error value holding `code`, `name`, and `message`. | `cerror_t err` |
+| `cerror_entry_t` | Key-value `{name, message}` entry used to define custom error tables. | `cerror_entry_t entry` |
+| `CERROR_OK` | Built-in success value (`code = 0`, `"ERR_OK"`, `"Success"`). | `cerror_t CERROR_OK` |
+| `CERROR_DEFAULT` | Built-in fallback error (`code = -1`, `"ERR_DEFAULT"`). Works with **zero setup**. | `cerror_t CERROR_DEFAULT` |
+| `CERROR_REGISTER` | Registers a static `cerror_entry_t` array (deduces array length automatically). | `void CERROR_REGISTER(cerror_entry_t list[])` |
+| `cerror_register` | Registers a custom error table by pointer and length (pass `NULL, 0` to reset). | `void cerror_register(const cerror_entry_t *entries, size_t count)` |
+| `cerror` | Looks up an error by name (`"ERR_OK"`, registered entry, or fallback with `code = -1`). | `cerror_t cerror(const char *name)` |
+| `cerror_err_name` | Returns the error's symbolic name (defaults to `"ERR_OK"` or `"ERR_DEFAULT"`). | `const char *cerror_err_name(cerror_t err)` |
+| `cerror_strerror` | Returns the human-readable error message. | `const char *cerror_strerror(cerror_t err)` |
+| `cerror_panic` | Prints error details, file, and line to `stderr`, then calls `abort()`. | `void cerror_panic(cerror_t err, const char *msg, const char *file, int line)` |
+| `CERROR_RESULT` | Declares a C99 `Result<TYPE, cerror_t>` struct (`is_ok`, `ok`, `err`) and its unwrap helpers. | `CERROR_RESULT(TYPE, Name);` |
+| `OK` | Constructs a successful `Name` result holding `val`. | `Name OK(Name, TYPE val)` |
+| `ERR` | Constructs a failed `Name` result holding `err`. | `Name ERR(Name, cerror_t err)` |
+| `IS_OK` | Returns `true` if `res` holds an `ok` value. | `bool IS_OK(Name res)` |
+| `IS_ERR` | Returns `true` if `res` holds an `err` value. | `bool IS_ERR(Name res)` |
+| `TRY` | Unwraps `expr` into `out`, or early-returns its error (pass 1 type if both match, or `RetType, ExprType` if they differ). | `TRY(out, Type, expr);` / `TRY(out, RetType, ExprType, expr);` |
+| `UNWRAP` | Returns `res.ok`, or panics with call-site location on `Err`. | `TYPE UNWRAP(Name, Name expr)` |
+| `EXPECT` | Same as `UNWRAP`, but includes a custom `msg` on panic. | `TYPE EXPECT(Name, Name expr, const char *msg)` |
+| `UNWRAP_OR` | Returns `res.ok`, or `fallback` if `expr` is an `Err`. | `TYPE UNWRAP_OR(Name, Name expr, TYPE fallback)` |
+
+---
+
 ## Unified Example
 
 The example below demonstrates how `Arena`, `Vector(T)`, `Cmap(T)`, and `String` work together seamlessly without a single manual `free()` call for individual containers or strings:
@@ -156,95 +182,173 @@ The example below demonstrates how `Arena`, `Vector(T)`, `Cmap(T)`, and `String`
 #include <stdio.h>
 
 typedef struct {
-    int id;
-    const char *arch;
+  int id;
+  const char *arch;
 } BuildTarget;
 
+// Declare typed Result<T, cerror_t> wrappers
+CERROR_RESULT(String *, ResString);
+CERROR_RESULT(BuildTarget *, ResTarget);
+
+static ResString parse_config_val(Arena *arena, String *config_line) {
+  StringView sv = sv_trim(sv_from_string(config_line));
+  StringView key = sv_trim(sv_chop_by_delim(&sv, '='));
+  StringView val = sv_trim(sv);
+
+  if (key.length == 0 || val.length == 0) {
+    return ERR(ResString, cerror("ERR_INVALID_CONFIG"));
+  }
+
+  printf("Parsed Config via StringView -> Key: '" SV_FMT "', Val: '" SV_FMT
+         "'\n\n",
+         SV_ARG(key), SV_ARG(val));
+  return OK(ResString, string_format(arena, SV_FMT, SV_ARG(val)));
+}
+
+static ResString validate_config(Arena *arena, String *config_line) {
+  String *val;
+  // 3-arg TRY: current function and expression share the same Result type
+  // (ResString)
+  TRY(val, ResString, parse_config_val(arena, config_line));
+  return OK(ResString, val);
+}
+
+static ResTarget create_build_target(Arena *arena, int id, const char *arch,
+                                     String *config_line) {
+  if (!arena) {
+    return ERR(ResTarget, CERROR_DEFAULT);
+  }
+  if (!arch || arch[0] == '\0') {
+    return ERR(ResTarget, cerror("ERR_INVALID_ARCH"));
+  }
+
+  String *opt_level;
+  // 4-arg TRY: converts error from ResString into ResTarget on early return
+  TRY(opt_level, ResTarget, ResString, validate_config(arena, config_line));
+  (void)opt_level;
+
+  BuildTarget *target = arena_push(arena, BuildTarget, 1);
+  target->id = id;
+  target->arch = arch;
+  return OK(ResTarget, target);
+}
+
+static ResString lookup_profile(Cmap(String *) profiles, const char *user) {
+  if (!map_has(profiles, user)) {
+    return ERR(ResString, cerror("ERR_PROFILE_NOT_FOUND"));
+  }
+  return OK(ResString, map_get(profiles, user));
+}
+
 int main(void) {
-    // 1. Initialize a single shared Arena for the entire program/task
-    Arena *arena = arena_init(4096);
+  // 0. Register domain-specific error messages (CERROR_OK & CERROR_DEFAULT are
+  // built-in)
+  static const cerror_entry_t errs[] = {
+      {"ERR_INVALID_CONFIG",
+       "Configuration line must be in 'key = value' format"},
+      {"ERR_INVALID_ARCH", "Target architecture cannot be empty"},
+      {"ERR_PROFILE_NOT_FOUND", "User profile does not exist"},
+  };
+  CERROR_REGISTER(errs);
 
-    // 2. Create, format, and manipulate managed Strings on the arena
-    String *raw_title = string_from(arena, "   arstd: arena standard library   ");
-    String *trimmed   = string_trim(arena, raw_title);
-    String *banner    = string_upper(arena, trimmed); // Now returns String *
-    String *header    = string_format(arena, "=== %s (len: %d) ===",
-                                      string(banner), string_len(trimmed));
-    printf("%s\n\n", string(header));
+  // 1. Initialize a single shared Arena for the entire program/task
+  Arena *arena = arena_init(4096);
 
-    // 3. Split, Replace, and Join Strings with Vector(String *)
-    String *csv_langs = string_from(arena, "c89,c99,c11,c23");
-    Vector(String *) stds = string_split(arena, csv_langs, ",");
-    at(stds, 1) = string_replace(arena, at(stds, 1), "c99", "c99 (strict)");
+  // 2. Create, format, and manipulate managed Strings on the arena
+  String *raw_title = string_from(arena, "   arstd: arena standard library   ");
+  String *trimmed = string_trim(arena, raw_title);
+  String *banner = string_upper(arena, trimmed);
+  String *header = string_format(arena, "=== %s (len: %d) ===", string(banner),
+                                 string_len(trimmed));
+  printf("%s\n\n", string(header));
 
-    String *joined_stds = string_join(arena, stds, " | ");
-    printf("Supported Standards (%d): %s\n\n", length(stds), string(joined_stds));
+  // 3. Split, Replace, and Join Strings with Vector(String *)
+  String *csv_langs = string_from(arena, "c89,c99,c11,c23");
+  Vector(String *) stds = string_split(arena, csv_langs, ",");
+  at(stds, 1) = string_replace(arena, at(stds, 1), "c99", "c99 (strict)");
 
-    // 4. Zero-allocation StringView parsing (0 arena bytes consumed!)
-    String *config_line = string_from(arena, "  opt_level = release_O3  ");
-    StringView sv = sv_trim(sv_from_string(config_line));
-    StringView key = sv_trim(sv_chop_by_delim(&sv, '='));
-    StringView val = sv_trim(sv);
-    printf("Parsed Config via StringView -> Key: '" SV_FMT "', Val: '" SV_FMT "'\n\n",
-           SV_ARG(key), SV_ARG(val));
+  String *joined_stds = string_join(arena, stds, " | ");
+  printf("Supported Standards (%d): %s\n\n", length(stds), string(joined_stds));
 
-    // 5. Typed allocation via arena_push & Segmented Vector of integers
-    BuildTarget *target = arena_push(arena, BuildTarget, 1);
-    target->id = 1;
-    target->arch = "x86_64";
+  // 4. Parse config & allocate BuildTarget via TRY + EXPECT (panics with
+  // location on Err)
+  String *config_line = string_from(arena, "  opt_level = release_O3  ");
+  BuildTarget *target =
+      EXPECT(ResTarget, create_build_target(arena, 1, "x86_64", config_line),
+             "Failed to initialize build target");
 
-    Vector(int) primes = vector_init(arena);
-    append(primes, 2);
-    append(primes, 3);
-    append(primes, 5);
-    at(primes, 2) = 7; // Direct lvalue modification via at()
+  // 5. Segmented Vector of integers
+  Vector(int) primes = vector_init(arena);
+  append(primes, 2);
+  append(primes, 3);
+  append(primes, 5);
+  at(primes, 2) = 7; // Direct lvalue modification via at()
 
-    printf("Target [%d: %s] | Primes (%d items): ",
-           target->id, target->arch, length(primes));
-    for (int i = 0; i < length(primes); i++) {
-        printf("%d ", at(primes, i));
-    }
-    printf("\n\n");
+  printf("Target [%d: %s] | Primes (%d items): ", target->id, target->arch,
+         length(primes));
+  for (int i = 0; i < length(primes); i++) {
+    printf("%d ", at(primes, i));
+  }
+  printf("\n\n");
 
-    // 6. Temporary Scratchpad Scope (ArenaTemp)
-    //    Any temporary Strings, Vectors, or Maps inside this block are rewound!
-    size_t used_before = arena_used(arena);
-    {
-        ArenaTemp scratch = arena_temp_begin(arena);
+  // 6. Temporary Scratchpad Scope (ArenaTemp)
+  //    Any temporary Strings, Vectors, or Maps inside this block are rewound!
+  {
+    ArenaTemp scratch = arena_temp_begin(arena);
 
-        String *temp_path = string_concat_cstr(arena, 3, "/tmp/", target->arch, "/build.log");
-        if (string_ends_with(temp_path, ".log") && string_contains(temp_path, "x86_64")) {
-            printf("Scratch Check: Validated temporary path '%s'\n", string(temp_path));
-        }
-
-        arena_temp_end(scratch); // Rewinds and zeroes temporary memory back to checkpoint
-    }
-    printf("Arena Memory Introspection: %zu B used / %zu B capacity (Temp reclaimed!)\n\n",
-           arena_used(arena), arena_capacity(arena));
-
-    // 7. Create a typed Hash Map mapping usernames (const char *) to String* objects
-    Cmap(String *) profiles = map_init(arena);
-
-    map_add(profiles, "alice",   string_concat_cstr(arena, 2, "Role: ", "Architect"));
-    map_add(profiles, "bob",     string_concat_cstr(arena, 2, "Role: ", "Systems Engineer"));
-    map_add(profiles, "charlie", string_from(arena, "Role: Maintainer"));
-
-    // Mutate an entry in-place and remove another
-    map_get(profiles, "bob") = string_from(arena, "Role: Lead Systems Engineer");
-    map_remove(profiles, "charlie");
-
-    // 8. Iterate over active map keys in O(1) time
-    Vector(char *) keys = map_keys(profiles);
-    printf("Active Profiles (%zu):\n", map_len(profiles));
-    for (int i = 0; i < length(keys); i++) {
-        char *user = at(keys, i);
-        String *info = map_get(profiles, user);
-        printf("  - %-8s -> %s\n", user, string(info));
+    String *temp_path =
+        string_concat_cstr(arena, 3, "/tmp/", target->arch, "/build.log");
+    if (string_ends_with(temp_path, ".log") &&
+        string_contains(temp_path, "x86_64")) {
+      printf("Scratch Check: Validated temporary path '%s'\n",
+             string(temp_path));
     }
 
-    // 9. Securely wipe and reclaim ALL memory in one call!
-    //    (Or use arena_rewind(arena) inside loops to reuse warm blocks with 0 mallocs)
-    arena_free(&arena);
-    return 0;
+    arena_temp_end(
+        scratch); // Rewinds and zeroes temporary memory back to checkpoint
+  }
+  printf("Arena Memory Introspection: %zu B used / %zu B capacity (Temp "
+         "reclaimed!)\n\n",
+         arena_used(arena), arena_capacity(arena));
+
+  // 7. Create a typed Hash Map mapping usernames (const char *) to String*
+  // objects
+  Cmap(String *) profiles = map_init(arena);
+
+  map_add(profiles, "alice",
+          string_concat_cstr(arena, 2, "Role: ", "Architect"));
+  map_add(profiles, "bob",
+          string_concat_cstr(arena, 2, "Role: ", "Systems Engineer"));
+  map_add(profiles, "charlie", string_from(arena, "Role: Maintainer"));
+
+  // Mutate an entry in-place and remove another
+  map_get(profiles, "bob") = string_from(arena, "Role: Lead Systems Engineer");
+  map_remove(profiles, "charlie");
+
+  // 8. Iterate over active map keys in O(1) time
+  Vector(char *) keys = map_keys(profiles);
+  printf("Active Profiles (%zu):\n", map_len(profiles));
+  for (int i = 0; i < length(keys); i++) {
+    char *user = at(keys, i);
+    String *info = map_get(profiles, user);
+    printf("  - %-8s -> %s\n", user, string(info));
+  }
+  printf("\n");
+
+  // 9. Graceful error inspection (IS_ERR) and fallback recovery (UNWRAP_OR)
+  ResString missing = lookup_profile(profiles, "charlie");
+  if (IS_ERR(missing)) {
+    printf("Lookup 'charlie' failed -> [%s] %s\n", cerror_err_name(missing.err),
+           cerror_strerror(missing.err));
+  }
+
+  String *charlie_role =
+      UNWRAP_OR(ResString, lookup_profile(profiles, "charlie"),
+                string_from(arena, "Role: Inactive / Removed"));
+  printf("Fallback for 'charlie'  -> %s\n", string(charlie_role));
+
+  // 10. Securely wipe and reclaim ALL memory in one call!
+  arena_free(&arena);
+  return 0;
 }
 ```
