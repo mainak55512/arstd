@@ -23,7 +23,7 @@ Through a single umbrella header (`#include <arstd.h>`), `arstd` provides region
 Add `arstd` directly to your `flint` project:
 
 ```bash
-flint add https://github.com/mainak55512/arstd@v0.1.5
+flint add https://github.com/mainak55512/arstd@v0.2.0
 ```
 
 ### Using CMake
