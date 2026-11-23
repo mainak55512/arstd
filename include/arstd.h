@@ -2,6 +2,7 @@
 #define ARSTD_H
 
 #include <arena.h>
+#include <cerror.h>
 #include <cmap.h>
 #include <cstring.h>
 #include <cvector.h>
