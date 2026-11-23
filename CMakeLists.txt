@@ -18,6 +18,7 @@ set(ARSTD_SOURCES
     lib/cvector.c
     lib/cmap.c
     lib/cstring.c
+    lib/cerror.c
 )
 
 add_library(arstd STATIC ${ARSTD_SOURCES})
